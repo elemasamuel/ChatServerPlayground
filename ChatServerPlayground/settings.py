@@ -27,6 +27,9 @@ SECRET_KEY = 'django-insecure-ty*aoxsi7@krlwa5ke&uszpx6_1b1!#s66q=_k*&(+aqvh%k=9
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
+if DEBUG:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend' # development only
+
 ALLOWED_HOSTS = []
 
 AUTH_USER_MODEL = "account.Account"
