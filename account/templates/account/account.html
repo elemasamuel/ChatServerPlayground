@@ -93,7 +93,7 @@
           {% if is_self %}
           <a
             class="mt-4 btn btn-primary"
-            href="{#% url 'account:edit' user_id=id %#}"
+            href="{% url 'account:edit' user_id=id %}"
           >
             Update
           </a>
