@@ -87,7 +87,7 @@
                 height="30"
               />
               <div class="dropdown-menu" aria-labelledby="id_profile_links">
-                <a class="dropdown-item">
+                <a class="dropdown-item" href="{% url 'account:view' user_id=request.user.id %}">
                   Account
                 </a>
                 <a class="dropdown-item" href="{% url 'logout' %}">Logout</a>
@@ -144,7 +144,7 @@
                 height="30"
               />
               <div class="dropdown-menu" aria-labelledby="id_profile_links">
-                <a class="dropdown-item" href="">
+                <a class="dropdown-item" href="{% url 'account:view' user_id=request.user.id %}">
                   Account
                 </a>
                 <a class="dropdown-item" href="{% url 'logout' %}">Logout</a>
