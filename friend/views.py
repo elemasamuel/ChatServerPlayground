@@ -3,7 +3,7 @@ from django.http import HttpResponse
 import json
 
 from account.models import Account
-from friend.models import FriendRequest
+from friend.models import FriendList, FriendRequest
 
 # Create your views here.
 
@@ -38,12 +38,12 @@ def send_friend_request(request, *args, **kwargs):
                 friend_requests = FriendRequest.objects.filter(
                     sender=user, receiver=receiver
                 )
-                # find if any of them are active
+                # find if any of them are active (pending)
                 try:
                     for request in friend_requests:
                         if request.is_active:
                             raise Exception("You already sent them a friend request.")
-                    # If none are active, then create a new friend request
+                    # If none are active create a new friend request
                     friend_request = FriendRequest(sender=user, receiver=receiver)
                     friend_request.save()
                     payload["response"] = "Friend request sent."
@@ -58,7 +58,7 @@ def send_friend_request(request, *args, **kwargs):
             if payload["response"] == None:
                 payload["response"] = "Something went wrong."
         else:
-            payload["response"] = "Unable to send a friend request."
+            payload["response"] = "Unable to sent a friend request."
     else:
         payload["response"] = "You must be authenticated to send a friend request."
     return HttpResponse(json.dumps(payload), content_type="application/json")
@@ -85,4 +85,24 @@ def accept_friend_request(request, *args, **kwargs):
             payload["response"] = "Unable to accept that friend request."
     else:
         payload["response"] = "You must be authenticated to accept a friend request."
+    return HttpResponse(json.dumps(payload), content_type="application/json")
+
+
+def remove_friend(request, *args, **kwargs):
+    user = request.user
+    payload = {}
+    if request.method == "POST" and user.is_authenticated:
+        user_id = request.POST.get("receiver_user_id")
+        if user_id:
+            try:
+                removee = Account.objects.get(pk=user_id)
+                friend_list = FriendList.objects.get(user=user)
+                friend_list.unfriend(removee)
+                payload["response"] = "Successfully removed that friend."
+            except Exception as e:
+                payload["response"] = f"Something went wrong: {str(e)}."
+        else:
+            payload["response"] = "There was an error. Unable to remove that friend."
+    else:
+        payload["response"] = "You must be authenticated to remove a friend."
     return HttpResponse(json.dumps(payload), content_type="application/json")
