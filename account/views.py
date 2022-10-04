@@ -1,4 +1,5 @@
 from email.mime import image
+from django.dispatch import receiver
 from django.shortcuts import render, redirect
 from django.http import HttpResponse
 from django.contrib.auth import login, authenticate, logout
@@ -138,13 +139,23 @@ def account_view(request, *args, **kwargs):
                         sender=account, receiver=user
                     ).id
                 # CASE2: Request has been sent from YOU to THEM: FriendRequestStatus.YOU_SENT_TO_THEM
-                elif get_friend_request_or_false(sender=account, receiver=user) != False:
+                elif (
+                    get_friend_request_or_false(sender=account, receiver=user) != False
+                ):
                     request_sent = FriendRequestStatus.YOU_SENT_TO_THEM.value
                 # CASE3: No request has been sent. FriendRequestStatus.NO_REQUEST_SENT
                 else:
+                    request_sent = FriendRequestStatus.NO_REQUEST_SENT.value
         elif not user.is_authenticated:
             is_self = False
-
+        else:
+            try:
+                friend_requests = FriendRequest.objects.filter(
+                    receiver=user, is_active=True
+                )
+            except:
+                pass
+        # Set the template variables to the values
         context["is_self"] = is_self
         context["is_friend"] = is_friend
         context["BASE_URL"] = settings.BASE_URL
