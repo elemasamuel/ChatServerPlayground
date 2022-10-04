@@ -12,9 +12,12 @@ import json
 import base64
 import requests
 from django.core import files
+from friend.friend_request_status import FriendRequestStatus
 
+from friend.utils import get_friend_request_or_false
 from account.forms import AccountUpdateForm, RegistrationForm, AccountAuthenticationForm
 from account.models import Account
+from friend.models import FriendList, FriendRequest
 
 TEMP_PROFILE_IMAGE_NAME = "temp_profile_image.png"
 
@@ -110,12 +113,35 @@ def account_view(request, *args, **kwargs):
         context["profile_image"] = account.profile_image.url
         context["hide_email"] = account.hide_email
 
+        try:
+            friend_list = FriendList.objects.get(user=account)
+        except FriendList.DoesNotExist:
+            friend_list = FriendList(user=account)
+            friend_list.save()
+        friends = friend_list.friends.all()
+        context["friends"] = friends
+
         # Define template variables
         is_self = True
         is_friend = False
         user = request.user
         if user.is_authenticated and user != account:
             is_self = False
+            if friends.filter(pk=user.id):
+                is_friend = True
+            else:
+                is_friend = False
+                # CASE1: Request has been sent from THEM to YOU: FriendRequestStatus.THEM_SENT_TO_YOU
+                if get_friend_request_or_false(sender=account, receiver=user) != False:
+                    request_sent = FriendRequestStatus.THEM_SENT_TO_YOU.values
+                    context["pending_friend_request_id"] = get_friend_request_or_false(
+                        sender=account, receiver=user
+                    ).id
+                # CASE2: Request has been sent from YOU to THEM: FriendRequestStatus.YOU_SENT_TO_THEM
+                elif get_friend_request_or_false(sender=account, receiver=user) != False:
+                    request_sent = FriendRequestStatus.YOU_SENT_TO_THEM.value
+                # CASE3: No request has been sent. FriendRequestStatus.NO_REQUEST_SENT
+                else:
         elif not user.is_authenticated:
             is_self = False
 
