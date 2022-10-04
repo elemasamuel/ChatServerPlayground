@@ -1,6 +1,11 @@
 from django.urls import path
 
-from friend.views import send_friend_request, friend_requests, accept_friend_request
+from friend.views import (
+    send_friend_request,
+    friend_requests,
+    accept_friend_request,
+    remove_friend,
+)
 
 app_name = "friend"
 
@@ -12,4 +17,5 @@ urlpatterns = [
         accept_friend_request,
         name="friend-request-accept",
     ),
+    path("friend_remove/", remove_friend, name="remove-friend"),
 ]
