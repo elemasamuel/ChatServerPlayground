@@ -1,5 +1,3 @@
-from email.mime import image
-from django.dispatch import receiver
 from django.shortcuts import render, redirect
 from django.http import HttpResponse
 from django.contrib.auth import login, authenticate, logout
@@ -13,26 +11,53 @@ import json
 import base64
 import requests
 from django.core import files
-from friend.friend_request_status import FriendRequestStatus
 
-from friend.utils import get_friend_request_or_false
-from account.forms import AccountUpdateForm, RegistrationForm, AccountAuthenticationForm
+
+from account.forms import RegistrationForm, AccountAuthenticationForm, AccountUpdateForm
 from account.models import Account
+from friend.utils import get_friend_request_or_false
+from friend.friend_request_status import FriendRequestStatus
 from friend.models import FriendList, FriendRequest
+
 
 TEMP_PROFILE_IMAGE_NAME = "temp_profile_image.png"
 
 
-# Create your views here.
+# This is basically almost exactly the same as friends/friend_list_view
+def account_search_view(request, *args, **kwargs):
+    context = {}
+    if request.method == "GET":
+        search_query = request.GET.get("q")
+        if len(search_query) > 0:
+            search_results = (
+                Account.objects.filter(email__icontains=search_query)
+                .filter(username__icontains=search_query)
+                .distinct()
+            )
+            user = request.user
+            accounts = []  # [(account1, True), (account2, False), ...]
+            if user.is_authenticated:
+                # get the authenticated users friend list
+                auth_user_friend_list = FriendList.objects.get(user=user)
+                for account in search_results:
+                    accounts.append(
+                        (account, auth_user_friend_list.is_mutual_friend(account))
+                    )
+                context["accounts"] = accounts
+            else:
+                for account in search_results:
+                    accounts.append((account, False))
+                context["accounts"] = accounts
+
+    return render(request, "account/search_results.html", context)
 
 
 def register_view(request, *args, **kwargs):
     user = request.user
-
     if user.is_authenticated:
-        return HttpResponse(f"You are already authenticated as {user.email}.")
-    context = {}
+        return HttpResponse("You are already authenticated as " + str(user.email))
 
+    context = {}
     if request.POST:
         form = RegistrationForm(request.POST)
         if form.is_valid():
@@ -41,13 +66,16 @@ def register_view(request, *args, **kwargs):
             raw_password = form.cleaned_data.get("password1")
             account = authenticate(email=email, password=raw_password)
             login(request, account)
-            destination = get_redirect_if_exists(request)
+            destination = kwargs.get("next")
             if destination:
                 return redirect(destination)
             return redirect("home")
         else:
             context["registration_form"] = form
 
+    else:
+        form = RegistrationForm()
+        context["registration_form"] = form
     return render(request, "account/register.html", context)
 
 
@@ -58,11 +86,13 @@ def logout_view(request):
 
 def login_view(request, *args, **kwargs):
     context = {}
-    user = request.user
 
+    user = request.user
     if user.is_authenticated:
         return redirect("home")
+
     destination = get_redirect_if_exists(request)
+    print("destination: " + str(destination))
 
     if request.POST:
         form = AccountAuthenticationForm(request.POST)
@@ -70,25 +100,26 @@ def login_view(request, *args, **kwargs):
             email = request.POST["email"]
             password = request.POST["password"]
             user = authenticate(email=email, password=password)
-        if user:
-            login(request, user)
-            destination = get_redirect_if_exists(request)
-            if destination:
-                return redirect(destination)
-            return redirect("home")
-        else:
-            context["login_form"] = form
+
+            if user:
+                login(request, user)
+                if destination:
+                    return redirect(destination)
+                return redirect("home")
+
+    else:
+        form = AccountAuthenticationForm()
+
+    context["login_form"] = form
 
     return render(request, "account/login.html", context)
 
 
 def get_redirect_if_exists(request):
     redirect = None
-
     if request.GET:
         if request.GET.get("next"):
             redirect = str(request.GET.get("next"))
-
     return redirect
 
 
@@ -105,8 +136,8 @@ def account_view(request, *args, **kwargs):
     user_id = kwargs.get("user_id")
     try:
         account = Account.objects.get(pk=user_id)
-    except Account.DoesNotExist:
-        return HttpResponse("That user doesn't exist.")
+    except:
+        return HttpResponse("Something went wrong.")
     if account:
         context["id"] = account.id
         context["username"] = account.username
@@ -125,7 +156,9 @@ def account_view(request, *args, **kwargs):
         # Define template variables
         is_self = True
         is_friend = False
-        request_sent = FriendRequestStatus.NO_REQUEST_SENT.value
+        request_sent = (
+            FriendRequestStatus.NO_REQUEST_SENT.value
+        )  # range: ENUM -> friend/friend_request_status.FriendRequestStatus
         friend_requests = None
         user = request.user
         if user.is_authenticated and user != account:
@@ -136,18 +169,19 @@ def account_view(request, *args, **kwargs):
                 is_friend = False
                 # CASE1: Request has been sent from THEM to YOU: FriendRequestStatus.THEM_SENT_TO_YOU
                 if get_friend_request_or_false(sender=account, receiver=user) != False:
-                    request_sent = FriendRequestStatus.THEM_SENT_TO_YOU.values
+                    request_sent = FriendRequestStatus.THEM_SENT_TO_YOU.value
                     context["pending_friend_request_id"] = get_friend_request_or_false(
                         sender=account, receiver=user
                     ).id
                 # CASE2: Request has been sent from YOU to THEM: FriendRequestStatus.YOU_SENT_TO_THEM
                 elif (
-                    get_friend_request_or_false(sender=account, receiver=user) != False
+                    get_friend_request_or_false(sender=user, receiver=account) != False
                 ):
                     request_sent = FriendRequestStatus.YOU_SENT_TO_THEM.value
-                # CASE3: No request has been sent. FriendRequestStatus.NO_REQUEST_SENT
+                # CASE3: No request sent from YOU or THEM: FriendRequestStatus.NO_REQUEST_SENT
                 else:
                     request_sent = FriendRequestStatus.NO_REQUEST_SENT.value
+
         elif not user.is_authenticated:
             is_self = False
         else:
@@ -157,33 +191,14 @@ def account_view(request, *args, **kwargs):
                 )
             except:
                 pass
+
         # Set the template variables to the values
         context["is_self"] = is_self
         context["is_friend"] = is_friend
-        context["BASE_URL"] = settings.BASE_URL
         context["request_sent"] = request_sent
         context["friend_requests"] = friend_requests
-
+        context["BASE_URL"] = settings.BASE_URL
         return render(request, "account/account.html", context)
-
-
-def account_search_view(request, *args, **kwargs):
-    context = {}
-
-    if request.method == "GET":
-        search_query = request.GET.get("q")
-        if len(search_query) > 0:
-            search_results = (
-                Account.objects.filter(email__icontains=search_query)
-                .filter(username__icontains=search_query)
-                .distinct()
-            )
-            accounts = []  # [(account1, True), account2, False)...]
-            for account in search_results:
-                accounts.append((account, False))  # you have no friends
-            context["accounts"] = accounts
-
-    return render(request, "account/search_results.html", context)
 
 
 def save_temp_profile_image_from_base64String(imageString, user):
